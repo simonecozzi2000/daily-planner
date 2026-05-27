@@ -58,7 +58,7 @@
   .col-sc::-webkit-scrollbar{width:3px;}
   .col-sc::-webkit-scrollbar-thumb{background:var(--brd);border-radius:2px;}
   .col-gen{width:215px;flex-shrink:0;}
-  .col-rdo{width:215px;flex-shrink:0;}
+  .col-rdo{width:340px;flex-shrink:0;}
   .col-cal{flex:1;min-width:0;border-right:none;}
   .dnav-row{display:flex;align-items:center;gap:5px;margin-bottom:7px;}
   .dnav-title{font-size:0.88rem;font-weight:700;flex:1;letter-spacing:-0.02em;}
@@ -118,6 +118,10 @@
   .rsc-soon{background:var(--oranges);color:var(--orange);}
   .rsc-today{background:var(--reds);color:var(--red);}
   .rsc-late{background:var(--reds);color:var(--red);text-decoration:line-through;opacity:0.8;}
+  .rdo-note{width:110px;flex-shrink:0;background:rgba(0,0,0,0.03);border:1px solid var(--brdl);border-radius:6px;color:var(--tx2);font-family:inherit;font-size:0.7rem;padding:5px 8px;resize:none;height:60px;outline:none;transition:border-color 0.2s;line-height:1.4;}
+  .rdo-note:focus{border-color:var(--purple);background:#fff;}
+  .rdo-note::placeholder{color:var(--tx3);}
+  .rdo-i.wip .rdo-note{background:rgba(175,82,222,0.04);}
   .cal-dh{padding:10px 12px 8px;border-bottom:1px solid var(--brdl);flex-shrink:0;}
   .cal-dt{font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--tx3);margin-bottom:3px;}
   .cal-ds{font-size:0.8rem;font-weight:600;color:var(--tx2);}
@@ -245,10 +249,18 @@
     <div class="col col-rdo" id="colRdo">
       <div class="col-hdr">
         <div class="col-ttl">Elaborazione RDO</div>
-        <div class="stats-s" style="margin-top:0">
-          <div class="stat-b" style="background:var(--purples);border-color:rgba(175,82,222,0.2)">
+        <div class="stats-s" style="margin-top:0;gap:4px;">
+          <div class="stat-b" style="background:var(--surf2);">
+            <span class="sdot" style="background:var(--tx3)"></span>
+            <span id="rdoTotal">0 totali</span>
+          </div>
+          <div class="stat-b" style="background:var(--blues);border-color:rgba(0,122,255,0.2);">
+            <span class="sdot" style="background:var(--blue)"></span>
+            <span id="rdoDaFare">0 da fare</span>
+          </div>
+          <div class="stat-b" style="background:var(--purples);border-color:rgba(175,82,222,0.2);">
             <span class="sdot" style="background:var(--purple)"></span>
-            <span id="rdoCnt">0 in corso</span>
+            <span id="rdoCnt">0 in elaborazione</span>
           </div>
         </div>
       </div>
@@ -305,7 +317,7 @@
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js";
-import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js";
+import { getFirestore, doc, onSnapshot, setDoc } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBUS8U-g_a7SfDLpi_4QyPCtrJccMWlXmE",
@@ -328,18 +340,6 @@ function todayISO(){return new Date().toISOString().split('T')[0];}
 function offISO(n){const d=new Date();d.setDate(d.getDate()+n);return d.toISOString().split('T')[0];}
 function isMob(){return window.innerWidth<=768;}
 
-async function loadData(){
-  try{
-    const snap = await getDoc(doc(db,"dailyplanner",DOC_ID));
-    if(snap.exists()){
-      const d = snap.data();
-      tasks = d.tasks||[];
-      rdos = d.rdos||[];
-      calEvs = d.calEvs||[];
-    }
-  }catch(e){console.error("load error",e);}
-}
-
 async function saveData(){
   try{
     await setDoc(doc(db,"dailyplanner",DOC_ID),{tasks,rdos,calEvs});
@@ -347,18 +347,28 @@ async function saveData(){
 }
 
 async function init(){
-  await loadData();
-  document.getElementById('loadScreen').style.display='none';
-  document.getElementById('appRoot').style.display='flex';
+  // real-time listener
+  onSnapshot(doc(db,"dailyplanner",DOC_ID), snap => {
+    if(snap.exists()){
+      const d=snap.data();
+      tasks=d.tasks||[];
+      rdos=d.rdos||[];
+      calEvs=d.calEvs||[];
+    }
+    document.getElementById('loadScreen').style.display='none';
+    document.getElementById('appRoot').style.display='flex';
+    renderAll();
+    schedAll();
+    updRdoDot();
+  }, err => {
+    console.error("snapshot error",err);
+    document.getElementById('loadScreen').style.display='none';
+    document.getElementById('appRoot').style.display='flex';
+  });
   document.getElementById('iDate').value=todayISO();
   updateTopDate();
-  renderAll();
   checkNotif();
-  schedAll();
-  if(isMob()){
-    document.getElementById('addBar').style.display='none';
-    updRdoDot();
-  }
+  if(isMob()) document.getElementById('addBar').style.display='none';
 }
 
 function renderAll(){renderDayNav();renderTasks();renderRDOs();renderCal();}
@@ -467,10 +477,24 @@ function renderTasks(){
 window.togTask=async function(id){const t=tasks.find(t=>t.id===id);if(t){t.done=!t.done;await saveData();renderTasks();renderCal();}}
 window.delTask=async function(id){tasks=tasks.filter(t=>t.id!==id);await saveData();renderDayNav();renderTasks();renderCal();showToast('Impegno eliminato');}
 
+function sortRDOs(list){
+  // 1) WIP in cima, 2) per scadenza più prossima (null = in fondo), 3) per data ricezione più vecchia
+  return [...list].sort((a,b)=>{
+    if(a.wip!==b.wip) return a.wip?-1:1;
+    const as=a.scadenza||'9999-99-99', bs=b.scadenza||'9999-99-99';
+    if(as!==bs) return as.localeCompare(bs);
+    return a.received.localeCompare(b.received);
+  });
+}
+
 function renderRDOs(){
   const list=document.getElementById('rdoList');
-  const active=rdos.filter(r=>!r.done).sort((a,b)=>a.received.localeCompare(b.received));
-  document.getElementById('rdoCnt').textContent=`${active.length} in corso`;
+  const active=sortRDOs(rdos.filter(r=>!r.done));
+  const wip=active.filter(r=>r.wip);
+  const daFare=active.filter(r=>!r.wip);
+  document.getElementById('rdoTotal').textContent=`${active.length} totali`;
+  document.getElementById('rdoDaFare').textContent=`${daFare.length} da fare`;
+  document.getElementById('rdoCnt').textContent=`${wip.length} in elaborazione`;
   updRdoDot();
   if(!active.length){list.innerHTML='<div class="empty-s"><div class="empty-ic">🎉</div>Nessuna RDO in elaborazione</div>';return;}
   list.innerHTML=active.map(r=>{
@@ -487,13 +511,17 @@ function renderRDOs(){
       const sd=new Date(r.scadenza+'T12:00:00').toLocaleDateString('it-IT',{day:'numeric',month:'short'});
       sh=`<div class="rdo-sc ${cls}">${ic} Scadenza: ${sd}</div>`;
     }
+    const noteVal=esc(r.note||'');
     return`<div class="rdo-i ${r.wip?'wip':''}">
       <div class="rdo-chk" onclick="stepRDO(${r.id})">${r.wip?'···':''}</div>
-      <div style="flex:1;min-width:0">
-        <div class="rdo-nm">${esc(r.name)}</div>
-        <div class="rdo-dt">Ricevuta: <b>${ds}</b></div>
-        ${r.wip?'<div class="wip-b">⚙ In elaborazione</div>':''}
-        ${sh}
+      <div style="flex:1;min-width:0;display:flex;gap:8px;align-items:flex-start;">
+        <div style="flex:1;min-width:0;">
+          <div class="rdo-nm">${esc(r.name)}</div>
+          <div class="rdo-dt">Ricevuta: <b>${ds}</b></div>
+          ${r.wip?'<div class="wip-b">⚙ In elaborazione</div>':''}
+          ${sh}
+        </div>
+        <textarea class="rdo-note" placeholder="Note..." onblur="saveRDONote(${r.id},this.value)" onclick="event.stopPropagation()">${noteVal}</textarea>
       </div>
       <button class="del-b" onclick="delRDO(${r.id})">×</button>
     </div>`;
@@ -506,6 +534,7 @@ window.stepRDO=async function(id){
   else{r.done=true;await saveData();renderRDOs();showToast('✅ Offerta inviata!');}
 }
 window.delRDO=async function(id){rdos=rdos.filter(r=>r.id!==id);await saveData();renderRDOs();showToast('RDO eliminata');}
+window.saveRDONote=async function(id,val){const r=rdos.find(r=>r.id===id);if(r){r.note=val;await saveData();}}
 function updRdoDot(){const n=rdos.filter(r=>!r.done).length;const d=document.getElementById('rdoDotM');if(d)d.style.display=n>0?'block':'none';}
 
 function getCalItems(){
