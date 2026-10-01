@@ -101,11 +101,20 @@
   /* SUBTASK ITEM */
   .subtask-item{display:flex;align-items:flex-start;gap:7px;padding:5px 4px;border-radius:6px;transition:background 0.15s;position:relative;}
   .subtask-item:hover{background:var(--surf2);}
-  .subtask-chk{width:16px;height:16px;border-radius:4px;border:1.5px solid var(--brd);display:flex;align-items:center;justify-content:center;font-size:0.55rem;color:transparent;transition:all 0.15s;flex-shrink:0;margin-top:1px;cursor:pointer;}
+  .subtask-chk{width:16px;height:16px;border-radius:4px;border:1.5px solid var(--brd);display:flex;align-items:center;justify-content:center;font-size:0.55rem;color:transparent;transition:all 0.15s;flex-shrink:0;margin-top:2px;cursor:pointer;}
+  .subtask-item.wip .subtask-chk{background:var(--blue);border-color:var(--blue);color:#fff;font-size:0.5rem;}
   .subtask-item.done .subtask-chk{background:var(--green);border-color:var(--green);color:#fff;}
   .subtask-body{flex:1;min-width:0;}
-  .subtask-text{font-size:0.8rem;font-weight:400;color:var(--tx);line-height:1.3;cursor:pointer;}
+  .subtask-text{font-size:0.8rem;font-weight:400;color:var(--tx);line-height:1.3;}
+  .subtask-item.wip .subtask-text{color:var(--blue);font-weight:500;}
   .subtask-item.done .subtask-text{text-decoration:line-through;color:var(--tx3);}
+  .subtask-meta{display:flex;gap:5px;align-items:center;margin-top:3px;flex-wrap:wrap;}
+  .wip-badge{font-size:0.58rem;font-weight:700;color:var(--blue);background:var(--blues);padding:1px 6px;border-radius:99px;}
+  .subtask-deadline{font-size:0.6rem;font-weight:600;padding:1px 6px;border-radius:99px;}
+  .sdl-ok{background:var(--blues);color:var(--blue);}
+  .sdl-soon{background:var(--oranges);color:var(--orange);}
+  .sdl-today{background:var(--reds);color:var(--red);}
+  .sdl-late{background:var(--reds);color:var(--red);}
   .subtask-del{width:18px;height:18px;border-radius:50%;border:none;background:transparent;color:var(--tx3);font-size:0.75rem;cursor:pointer;display:flex;align-items:center;justify-content:center;opacity:0;transition:all 0.15s;flex-shrink:0;}
   .subtask-item:hover .subtask-del{opacity:1;}
   .subtask-del:hover{background:var(--reds);color:var(--red);}
@@ -257,17 +266,18 @@ function deadlineChip(dl) {
 }
 
 function countTasks(tasks) {
-  if (!tasks || !tasks.length) return {total:0, done:0};
-  let total = 0, done = 0;
+  if (!tasks || !tasks.length) return {total:0, done:0, wip:0};
+  let total = 0, done = 0, wip = 0;
   function walk(list) {
     for (const t of list) {
       total++;
       if (t.done) done++;
+      else if (t.wip) wip++;
       if (t.children && t.children.length) walk(t.children);
     }
   }
   walk(tasks);
-  return {total, done};
+  return {total, done, wip};
 }
 
 // ── PROJECTS ──
@@ -344,13 +354,15 @@ function removeTask(tasks, id) {
 
 window.addSubtask = async function(projId, parentId) {
   const inputId = parentId ? 'sub_'+parentId : 'subtask_'+projId;
+  const dateId = parentId ? 'subdate_'+parentId : 'subtaskdate_'+projId;
   const input = document.getElementById(inputId);
+  const dateInput = document.getElementById(dateId);
   if (!input) return;
   const text = input.value.trim();
   if (!text) return;
   const p = projects.find(p=>p.id===projId);
   if (!p) return;
-  const newTask = { id: uid(), text, done: false, children: [] };
+  const newTask = { id: uid(), text, done: false, wip: false, deadline: dateInput?.value||null, children: [] };
   if (parentId) {
     const parent = findTask(p.tasks, parentId);
     if (parent) { if (!parent.children) parent.children=[]; parent.children.push(newTask); }
@@ -358,6 +370,7 @@ window.addSubtask = async function(projId, parentId) {
     p.tasks.push(newTask);
   }
   input.value = '';
+  if (dateInput) dateInput.value = '';
   await save();
 }
 
@@ -365,7 +378,12 @@ window.toggleSubtask = async function(projId, taskId) {
   const p = projects.find(p=>p.id===projId);
   if (!p) return;
   const t = findTask(p.tasks, taskId);
-  if (t) { t.done = !t.done; await save(); }
+  if (!t) return;
+  // Cycle: none → wip → done → none
+  if (!t.wip && !t.done) { t.wip = true; }
+  else if (t.wip && !t.done) { t.wip = false; t.done = true; }
+  else { t.done = false; t.wip = false; }
+  await save();
 }
 
 window.deleteSubtask = async function(projId, taskId) {
@@ -377,23 +395,40 @@ window.deleteSubtask = async function(projId, taskId) {
 }
 
 // ── RENDER ──
+function subtaskDeadlineChip(dl) {
+  if (!dl) return '';
+  const td=todayISO(), tm=offISO(1), d3=offISO(3);
+  let cls, label;
+  if (dl < td) { cls='sdl-late'; label='⚠ ' + new Date(dl+'T12:00:00').toLocaleDateString('it-IT',{day:'numeric',month:'short'}); }
+  else if (dl === td) { cls='sdl-today'; label='📌 Oggi'; }
+  else if (dl <= d3) { cls='sdl-soon'; label='⏰ ' + new Date(dl+'T12:00:00').toLocaleDateString('it-IT',{day:'numeric',month:'short'}); }
+  else { cls='sdl-ok'; label='📅 ' + new Date(dl+'T12:00:00').toLocaleDateString('it-IT',{day:'numeric',month:'short'}); }
+  return `<span class="subtask-deadline ${cls}">${label}</span>`;
+}
+
 function renderSubtasks(projId, tasks, depth) {
   if (!tasks || !tasks.length) return '';
   return tasks.map(t => {
-    const childrenHtml = t.children && t.children.length ? 
+    const stateClass = t.done ? 'done' : t.wip ? 'wip' : '';
+    const chkContent = t.done ? '✓' : t.wip ? '···' : '';
+    const childrenHtml = t.children && t.children.length ?
       `<div class="subtask-children">${renderSubtasks(projId, t.children, depth+1)}</div>` : '';
     const addChildInput = depth < 3 ? `
       <div class="subtask-children" id="child_wrap_${t.id}" style="display:none">
         <div class="subtask-add-row" style="margin-bottom:4px;">
           <input type="text" class="subtask-input" id="sub_${t.id}" placeholder="Sotto-attività..." onkeydown="if(event.key==='Enter')addSubtask('${projId}','${t.id}')">
+          <input type="date" class="subtask-input" id="subdate_${t.id}" style="width:120px;flex:none;font-size:0.7rem;">
           <button class="subtask-add-btn" onclick="addSubtask('${projId}','${t.id}')">+</button>
         </div>
       </div>` : '';
     const addChildBtn = depth < 3 ? `<button class="subtask-add-child" onclick="toggleChildInput('${t.id}')">+ sub</button>` : '';
-    return `<div class="subtask-item ${t.done?'done':''}">
-      <div class="subtask-chk" onclick="toggleSubtask('${projId}','${t.id}')">${t.done?'✓':''}</div>
+    const dlChip = subtaskDeadlineChip(t.deadline);
+    const wipBadge = t.wip ? '<span class="wip-badge">⚙ In corso</span>' : '';
+    return `<div class="subtask-item ${stateClass}">
+      <div class="subtask-chk" onclick="toggleSubtask('${projId}','${t.id}')">${chkContent}</div>
       <div class="subtask-body">
         <div class="subtask-text">${esc(t.text)}</div>
+        <div class="subtask-meta">${wipBadge}${dlChip}</div>
         ${childrenHtml}
         ${addChildInput}
       </div>
@@ -415,17 +450,22 @@ function renderProjects() {
     return;
   }
   list.innerHTML = projects.map(p => {
-    const {total, done} = countTasks(p.tasks);
+    const {total, done, wip} = countTasks(p.tasks);
     const pct = total ? Math.round(done/total*100) : 0;
+    const pctWip = total ? Math.round(wip/total*100) : 0;
     const progressHtml = total > 0 ? `
       <div class="progress-wrap">
-        <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>
-        <span class="progress-text">${done}/${total}</span>
+        <div class="progress-bar" style="position:relative;overflow:hidden;">
+          <div class="progress-fill" style="width:${pct}%;position:absolute;left:0;top:0;bottom:0;background:var(--green);"></div>
+          <div style="width:${pctWip}%;position:absolute;left:${pct}%;top:0;bottom:0;background:var(--orange);border-radius:0 2px 2px 0;"></div>
+        </div>
+        <span class="progress-text">${done}/${total}${wip?' ('+wip+' in corso)':''}</span>
       </div>` : '';
     const subtasksHtml = p.expanded ? `
       <div class="subtasks-area">
         <div class="subtask-add-row">
           <input type="text" class="subtask-input" id="subtask_${p.id}" placeholder="Aggiungi attività..." onkeydown="if(event.key==='Enter')addSubtask('${p.id}',null)">
+          <input type="date" class="subtask-input" id="subtaskdate_${p.id}" style="width:130px;flex:none;font-size:0.72rem;">
           <button class="subtask-add-btn" onclick="addSubtask('${p.id}',null)">+</button>
         </div>
         ${renderSubtasks(p.id, p.tasks, 0)}
