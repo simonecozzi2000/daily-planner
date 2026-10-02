@@ -57,9 +57,18 @@
   .col-sc{flex:1;overflow-y:auto;padding:7px 9px;}
   .col-sc::-webkit-scrollbar{width:3px;}
   .col-sc::-webkit-scrollbar-thumb{background:var(--brd);border-radius:2px;}
-  .col-gen{width:215px;flex-shrink:0;}
-  .col-rdo{width:340px;flex-shrink:0;}
-  .col-cal{flex:1;min-width:0;border-right:none;}
+  .col-proj{width:210px;flex-shrink:0;}
+  .col-gen{width:210px;flex-shrink:0;}
+  .col-rdo{width:320px;flex-shrink:0;}
+  .col-cal{width:260px;flex-shrink:0;border-right:none;}
+  /* proj in corso items */
+  .proj-wip-group{margin-bottom:10px;}
+  .proj-wip-name{font-size:0.65rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--purple);margin-bottom:4px;padding:0 2px;display:flex;align-items:center;gap:5px;}
+  .proj-wip-name::after{content:'';flex:1;height:1px;background:var(--purples);}
+  .proj-wip-item{display:flex;flex-direction:column;padding:7px 9px;border-radius:var(--rsm);margin-bottom:4px;background:var(--surf);box-shadow:var(--sh1);border-left:3px solid var(--orange);}
+  .proj-wip-task{font-size:0.78rem;font-weight:500;color:var(--tx);line-height:1.3;}
+  .proj-wip-parent{font-size:0.62rem;color:var(--tx3);margin-top:2px;}
+  .proj-wip-parent b{color:var(--orange);}
   .dnav-row{display:flex;align-items:center;gap:5px;margin-bottom:7px;}
   .dnav-title{font-size:0.88rem;font-weight:700;flex:1;letter-spacing:-0.02em;}
   .dnav-title .sub{font-size:0.68rem;font-weight:500;color:var(--tx2);margin-left:3px;}
@@ -244,6 +253,20 @@
   </div>
 
   <div class="main">
+    <div class="col col-proj" id="colProj">
+      <div class="col-hdr">
+        <div class="col-ttl">Progetti in corso</div>
+        <div class="stats-s" style="margin-top:0">
+          <div class="stat-b" style="background:var(--purples);border-color:rgba(175,82,222,0.2)">
+            <span class="sdot" style="background:var(--purple)"></span>
+            <span id="projWipCount">0 attività</span>
+          </div>
+          <a href="projects.html" style="margin-left:auto;font-size:0.62rem;font-weight:600;color:var(--blue);text-decoration:none;">Vedi tutti →</a>
+        </div>
+      </div>
+      <div class="col-sc" id="projWipList"></div>
+    </div>
+
     <div class="col col-gen mob-act" id="colGen">
       <div class="col-hdr">
         <div class="col-ttl">Impegni generici</div>
@@ -301,6 +324,10 @@
   </div>
 
   <div class="mob-tb">
+    <button class="mt" id="mt-proj" onclick="mobTab('proj')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+      Progetti
+    </button>
     <button class="mt act" id="mt-gen" onclick="mobTab('gen')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
       Impegni
@@ -376,8 +403,9 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const DOC_ID = "simone";
+const PROJ_DOC = "simone_projects";
 
-let tasks=[], rdos=[], calEvs=[];
+let tasks=[], rdos=[], calEvs=[], projData=[];
 let dayOff=0, isRDO=false, focIdx=0, remTimers=[];
 const MAX_DAYS = Math.ceil((new Date(new Date().getFullYear(),11,31)-new Date())/86400000)+1;
 
@@ -391,7 +419,54 @@ async function saveData(){
   }catch(e){console.error("save error",e);}
 }
 
+function findTaskInProj(tasks,id){for(const t of tasks){if(t.id===id)return t;if(t.children){const f=findTaskInProj(t.children,id);if(f)return f;}}return null;}
+function findParentInProj(tasks,childId,parent=null){for(const t of tasks){if(t.id===childId)return parent;if(t.children){const f=findParentInProj(t.children,childId,t);if(f!==undefined)return f;}}return undefined;}
+
+function renderProjWip(){
+  const list=document.getElementById('projWipList');
+  if(!list)return;
+  // collect all wip tasks across all projects
+  const items=[];
+  function walk(tasks,projName,macroTask){
+    for(const t of tasks){
+      if(t.wip&&!t.done){
+        items.push({text:t.text,proj:projName,macro:macroTask?macroTask.text:null});
+      }
+      if(t.children) walk(t.children,projName,t);
+    }
+  }
+  for(const p of projData) walk(p.tasks||[],p.name,null);
+
+  document.getElementById('projWipCount').textContent=`${items.length} attivit${items.length===1?'à':'à'}`;
+
+  if(!items.length){
+    list.innerHTML='<div class="empty-s"><div class="empty-ic">🎯</div>Nessuna attività in corso</div>';
+    return;
+  }
+
+  // group by project
+  const groups={};
+  for(const it of items){
+    if(!groups[it.proj])groups[it.proj]=[];
+    groups[it.proj].push(it);
+  }
+
+  list.innerHTML=Object.entries(groups).map(([proj,its])=>`
+    <div class="proj-wip-group">
+      <div class="proj-wip-name">${esc(proj)}</div>
+      ${its.map(it=>`<div class="proj-wip-item">
+        <div class="proj-wip-task">${esc(it.text)}</div>
+        ${it.macro?`<div class="proj-wip-parent">↳ <b>${esc(it.macro)}</b></div>`:''}
+      </div>`).join('')}
+    </div>`).join('');
+}
+
 async function init(){
+  // listen to projects doc too
+  onSnapshot(doc(db,"dailyplanner",PROJ_DOC), snap=>{
+    projData=snap.exists()?(snap.data().projects||[]):[];
+    renderProjWip();
+  });
   // real-time listener
   onSnapshot(doc(db,"dailyplanner",DOC_ID), snap => {
     if(snap.exists()){
@@ -408,6 +483,7 @@ async function init(){
     const el=document.getElementById('syncLabel');
     if(el) el.textContent=`Aggiornato alle ${t}`;
     renderAll();
+    renderProjWip();
     schedAll();
     updRdoDot();
   }, err => {
@@ -805,8 +881,9 @@ window.focNext=function(){focIdx++;if(focIdx>=window._ft.length)focIdx=0;showFoc
 window.closeFocus=function(){document.getElementById('focusOv').classList.remove('active');}
 
 window.mobTab=function(tab){
-  ['gen','rdo','cal'].forEach(t=>{
-    const col=document.getElementById('col'+t[0].toUpperCase()+t.slice(1));
+  ['proj','gen','rdo','cal'].forEach(t=>{
+    const colId='col'+(t==='proj'?'Proj':t==='gen'?'Gen':t==='rdo'?'Rdo':'Cal');
+    const col=document.getElementById(colId);
     if(col)col.classList.toggle('mob-act',t===tab);
     const btn=document.getElementById('mt-'+t);
     if(btn)btn.classList.toggle('act',t===tab);
