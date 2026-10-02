@@ -590,16 +590,55 @@ function renderSubtasks(projId,tasks,depth,filterState){
   }).join('');
 }
 
+function renderDeadlineView(list){
+  // collect all incomplete tasks with deadline across all projects
+  const items=[];
+  function walk(tasks,projName,parentName){
+    for(const t of tasks){
+      if(!t.done && t.deadline){
+        items.push({task:t,projName,parentName});
+      }
+      if(t.children) walk(t.children,projName,t.text);
+    }
+  }
+  for(const p of projects) walk(p.tasks||[],p.name,null);
+  items.sort((a,b)=>a.task.deadline.localeCompare(b.task.deadline));
+  if(!items.length){
+    list.innerHTML=`<div class="empty-proj"><div class="empty-icon">📅</div><p>Nessuna attività con scadenza trovata.</p></div>`;
+    return;
+  }
+  list.innerHTML=items.map(({task:t,projName,parentName})=>{
+    const sc=t.done?'done':t.wip?'wip':'';
+    const d=new Date(t.deadline+'T12:00:00');
+    const dStr=d.toLocaleDateString('it-IT',{weekday:'short',day:'numeric',month:'short'});
+    const td=todayISO(),d3=offISO(3);
+    let dlCls='sdl-ok';
+    if(t.deadline<td)dlCls='sdl-late';
+    else if(t.deadline===td)dlCls='sdl-today';
+    else if(t.deadline<=d3)dlCls='sdl-soon';
+    const breadcrumb=parentName?`${projName} › ${parentName}`:projName;
+    return`<div class="sub-item ${sc}" style="background:var(--surf);box-shadow:var(--sh1);border-radius:var(--rsm);margin-bottom:5px;padding:9px 11px;">
+      <div class="sub-chk" style="border-color:${t.wip?'var(--blue)':t.done?'var(--green)':'var(--brd)'};">${t.done?'✓':t.wip?'···':''}</div>
+      <div class="sub-body">
+        <div class="sub-text">${esc(t.text)}</div>
+        <div class="sub-meta">
+          <span class="sub-dl ${dlCls}">📅 ${dStr}</span>
+          <span style="font-size:0.6rem;color:var(--tx3);">← ${esc(breadcrumb)}</span>
+          ${t.wip?'<span class="wip-badge">⚙ In corso</span>':''}
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
 function renderProjects(){
   const list=document.getElementById('projectsList');
+  if(sortByDeadline){renderDeadlineView(list);return;}
   let filtered=projects.filter(p=>{
     const st=projectStatus(p);
     if(currentFilter==='tutti')return true;
     return st===currentFilter;
   });
-  if(sortByDeadline){
-    filtered=[...filtered].sort((a,b)=>earliestDeadline(a).localeCompare(earliestDeadline(b)));
-  }
   if(!filtered.length){
     list.innerHTML=`<div class="empty-proj"><div class="empty-icon">📁</div><p>${currentFilter==='tutti'?'Nessun progetto ancora.':'Nessun progetto in questa categoria.'}</p></div>`;
     return;
