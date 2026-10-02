@@ -223,6 +223,7 @@
       <button class="filter-btn active" onclick="setFilter('tutti',this)">Tutti</button>
       <button class="filter-btn f-inizio" onclick="setFilter('inizio',this)">🔘 Da iniziare</button>
       <button class="filter-btn f-corso" onclick="setFilter('corso',this)">⚙ In corso</button>
+      <button class="filter-btn" id="sortBtn" onclick="toggleSort(this)" style="margin-left:auto;">📅 Per scadenza</button>
       <button class="filter-btn f-fatto" onclick="setFilter('fatto',this)">✅ Completati</button>
     </div>
 
@@ -302,6 +303,7 @@ const DOC = "simone_projects";
 
 let projects=[], notes=[];
 let currentFilter='tutti';
+let sortByDeadline=false;
 let dragSrcProj=null, dragSrcNote=null;
 let modalMode=null, modalId=null, modalProjId=null;
 
@@ -364,10 +366,33 @@ function countTasks(tasks){
   return{total,done,wip};
 }
 
+// ── SORT ──
+function earliestDeadline(p){
+  // finds the earliest deadline among all incomplete tasks in a project
+  let earliest = null;
+  function walk(tasks){
+    for(const t of tasks){
+      if(!t.done && t.deadline){
+        if(!earliest || t.deadline < earliest) earliest = t.deadline;
+      }
+      if(t.children) walk(t.children);
+    }
+  }
+  walk(p.tasks||[]);
+  if(!earliest && p.deadline) earliest = p.deadline;
+  return earliest || '9999-99-99';
+}
+
+window.toggleSort=function(el){
+  sortByDeadline=!sortByDeadline;
+  el.classList.toggle('active', sortByDeadline);
+  renderProjects();
+}
+
 // ── FILTER ──
 window.setFilter=function(f,el){
   currentFilter=f;
-  document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('.filter-btn:not(#sortBtn)').forEach(b=>b.classList.remove('active'));
   el.classList.add('active');
   renderProjects();
 }
@@ -416,12 +441,37 @@ window.addSubtask=async function(projId,parentId){
   await save();
 }
 
+// find direct parent of a task (returns task object or null if top-level)
+function findParent(tasks, childId, parent=null){
+  for(const t of tasks){
+    if(t.id===childId) return parent;
+    if(t.children){const found=findParent(t.children,childId,t);if(found!==undefined)return found;}
+  }
+  return undefined; // not found in this branch
+}
+
+// check if a task is top-level (direct child of project.tasks)
+function isTopLevel(p, taskId){
+  return p.tasks.some(t=>t.id===taskId);
+}
+
 window.toggleSubtask=async function(projId,taskId){
   const p=projects.find(p=>p.id===projId);if(!p)return;
   const t=findTask(p.tasks,taskId);if(!t)return;
+
+  // cycle state
   if(!t.wip&&!t.done){t.wip=true;}
   else if(t.wip&&!t.done){t.wip=false;t.done=true;}
   else{t.done=false;t.wip=false;}
+
+  // if it's a sub-task (not top-level) and now wip or done → propagate wip upward
+  if(!isTopLevel(p,taskId) && (t.wip||t.done)){
+    const parent=findParent(p.tasks,taskId);
+    if(parent && !parent.wip && !parent.done){
+      parent.wip=true;
+    }
+  }
+
   await save();
 }
 
@@ -547,6 +597,9 @@ function renderProjects(){
     if(currentFilter==='tutti')return true;
     return st===currentFilter;
   });
+  if(sortByDeadline){
+    filtered=[...filtered].sort((a,b)=>earliestDeadline(a).localeCompare(earliestDeadline(b)));
+  }
   if(!filtered.length){
     list.innerHTML=`<div class="empty-proj"><div class="empty-icon">📁</div><p>${currentFilter==='tutti'?'Nessun progetto ancora.':'Nessun progetto in questa categoria.'}</p></div>`;
     return;
