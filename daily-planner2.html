@@ -426,33 +426,84 @@ function renderProjWip(){
   const list=document.getElementById('projWipList');
   if(!list)return;
 
-  // collect all wip tasks with their full breadcrumb path
-  const items=[];
-  function walk(tasks,projName,path){
-    for(const t of tasks){
-      if(t.wip&&!t.done){
-        items.push({text:t.text,proj:projName,path:[...path]});
-      }
-      if(t.children) walk(t.children,projName,[...path,t.text]);
+  // For each project, find macro tasks that have at least one wip descendant
+  // Then for each macro, find all wip sub-tasks (at any depth)
+  function getWipDescendants(task){
+    const wips=[];
+    function walk(t){
+      if(t.wip&&!t.done) wips.push(t);
+      if(t.children) t.children.forEach(walk);
     }
+    if(task.children) task.children.forEach(walk);
+    return wips;
   }
-  for(const p of projData) walk(p.tasks||[],p.name,[]);
 
-  document.getElementById('projWipCount').textContent=`${items.length} attività`;
+  function hasWipDescendant(task){
+    if(task.wip&&!task.done) return true;
+    if(task.children) return task.children.some(c=>hasWipDescendant(c));
+    return false;
+  }
 
-  if(!items.length){
+  let totalWip=0;
+  const activeProjects=[];
+
+  for(const p of projData){
+    // macro tasks = top level tasks in project
+    const activeMacros=[];
+    for(const macro of (p.tasks||[])){
+      // get all wip tasks within this macro (including the macro itself)
+      const wipItems=[];
+      if(macro.wip&&!macro.done) wipItems.push(macro);
+      if(macro.children){
+        function collectWip(tasks){
+          for(const t of tasks){
+            if(t.wip&&!t.done) wipItems.push(t);
+            if(t.children) collectWip(t.children);
+          }
+        }
+        collectWip(macro.children);
+      }
+      if(wipItems.length>0){
+        activeMacros.push({macro,wipItems});
+        totalWip+=wipItems.length;
+      }
+    }
+    if(activeMacros.length>0) activeProjects.push({proj:p,macros:activeMacros});
+  }
+
+  document.getElementById('projWipCount').textContent=`${totalWip} attività`;
+
+  if(!activeProjects.length){
     list.innerHTML='<div class="empty-s"><div class="empty-ic">🎯</div>Nessuna attività in corso</div>';
     return;
   }
 
-  list.innerHTML=items.map(it=>{
-    const pathReversed=[...it.path].reverse();
-    const pathHtml=pathReversed.map(s=>`<span>${esc(s)}</span>`).join(' › ');
-    const projHtml=`<b style="color:var(--purple);font-weight:700;">${esc(it.proj)}</b>`;
-    const breadcrumb=[pathHtml,projHtml].filter(Boolean).join(' › ');
-    return`<div class="proj-wip-item">
-      <div class="proj-wip-task">${esc(it.text)}</div>
-      <div class="proj-wip-parent">${breadcrumb}</div>
+  list.innerHTML=activeProjects.map(({proj:p,macros})=>{
+    const macrosHtml=macros.map(({macro,wipItems})=>`
+      <div style="margin-bottom:6px;">
+        <div style="font-size:0.62rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--tx2);margin-bottom:3px;">${esc(macro.text)}</div>
+        ${wipItems.filter(t=>t.id!==macro.id).map(t=>{
+          const dl=t.deadline?`<span style="font-size:0.58rem;font-weight:600;padding:1px 5px;border-radius:99px;background:var(--oranges);color:var(--orange);">📅 ${new Date(t.deadline+'T12:00:00').toLocaleDateString('it-IT',{day:'numeric',month:'short'})}</span>`:'';
+          return`<div style="display:flex;align-items:flex-start;gap:5px;padding:2px 0 2px 8px;">
+            <span style="color:var(--orange);font-size:0.7rem;margin-top:1px;">•</span>
+            <div>
+              <span style="font-size:0.76rem;font-weight:500;color:var(--tx);">${esc(t.text)}</span>
+              ${dl?`<div style="margin-top:1px;">${dl}</div>`:''}
+            </div>
+          </div>`;
+        }).join('')}
+        ${wipItems.find(t=>t.id===macro.id)?`<div style="display:flex;align-items:center;gap:5px;padding:2px 0;">
+            <span style="color:var(--orange);font-size:0.7rem;">•</span>
+            <span style="font-size:0.76rem;font-weight:500;color:var(--tx);font-style:italic;">attività principale</span>
+          </div>`:''}
+      </div>`).join('');
+    return`<div style="background:var(--surf);border-radius:var(--r);box-shadow:var(--sh1);margin-bottom:8px;overflow:hidden;border-left:3px solid var(--purple);">
+      <div style="padding:6px 10px 4px;background:var(--purples);border-bottom:1px solid rgba(175,82,222,0.15);">
+        <span style="font-size:0.65rem;font-weight:800;text-transform:uppercase;letter-spacing:0.07em;color:var(--purple);">${esc(p.name)}</span>
+      </div>
+      <div style="padding:7px 10px;">
+        ${macrosHtml}
+      </div>
     </div>`;
   }).join('');
 }
