@@ -57,10 +57,10 @@
   .col-sc{flex:1;overflow-y:auto;padding:7px 9px;}
   .col-sc::-webkit-scrollbar{width:3px;}
   .col-sc::-webkit-scrollbar-thumb{background:var(--brd);border-radius:2px;}
-  .col-proj{width:210px;flex-shrink:0;}
-  .col-gen{width:210px;flex-shrink:0;}
-  .col-rdo{width:320px;flex-shrink:0;}
-  .col-cal{width:260px;flex-shrink:0;border-right:none;}
+  .col-proj{flex:1.2;min-width:0;}
+  .col-gen{flex:1;min-width:0;}
+  .col-rdo{flex:1;min-width:0;}
+  .col-cal{flex:1.2;min-width:0;border-right:none;}
   /* proj in corso items */
   .proj-wip-group{margin-bottom:10px;}
   .proj-wip-name{font-size:0.65rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--purple);margin-bottom:4px;padding:0 2px;display:flex;align-items:center;gap:5px;}
@@ -425,40 +425,36 @@ function findParentInProj(tasks,childId,parent=null){for(const t of tasks){if(t.
 function renderProjWip(){
   const list=document.getElementById('projWipList');
   if(!list)return;
-  // collect all wip tasks across all projects
+
+  // collect all wip tasks with their full breadcrumb path
   const items=[];
-  function walk(tasks,projName,macroTask){
+  function walk(tasks,projName,path){
     for(const t of tasks){
       if(t.wip&&!t.done){
-        items.push({text:t.text,proj:projName,macro:macroTask?macroTask.text:null});
+        items.push({text:t.text,proj:projName,path:[...path]});
       }
-      if(t.children) walk(t.children,projName,t);
+      if(t.children) walk(t.children,projName,[...path,t.text]);
     }
   }
-  for(const p of projData) walk(p.tasks||[],p.name,null);
+  for(const p of projData) walk(p.tasks||[],p.name,[]);
 
-  document.getElementById('projWipCount').textContent=`${items.length} attivit${items.length===1?'à':'à'}`;
+  document.getElementById('projWipCount').textContent=`${items.length} attività`;
 
   if(!items.length){
     list.innerHTML='<div class="empty-s"><div class="empty-ic">🎯</div>Nessuna attività in corso</div>';
     return;
   }
 
-  // group by project
-  const groups={};
-  for(const it of items){
-    if(!groups[it.proj])groups[it.proj]=[];
-    groups[it.proj].push(it);
-  }
-
-  list.innerHTML=Object.entries(groups).map(([proj,its])=>`
-    <div class="proj-wip-group">
-      <div class="proj-wip-name">${esc(proj)}</div>
-      ${its.map(it=>`<div class="proj-wip-item">
-        <div class="proj-wip-task">${esc(it.text)}</div>
-        ${it.macro?`<div class="proj-wip-parent">↳ <b>${esc(it.macro)}</b></div>`:''}
-      </div>`).join('')}
-    </div>`).join('');
+  list.innerHTML=items.map(it=>{
+    const pathReversed=[...it.path].reverse();
+    const pathHtml=pathReversed.map(s=>`<span>${esc(s)}</span>`).join(' › ');
+    const projHtml=`<b style="color:var(--purple);font-weight:700;">${esc(it.proj)}</b>`;
+    const breadcrumb=[pathHtml,projHtml].filter(Boolean).join(' › ');
+    return`<div class="proj-wip-item">
+      <div class="proj-wip-task">${esc(it.text)}</div>
+      <div class="proj-wip-parent">${breadcrumb}</div>
+    </div>`;
+  }).join('');
 }
 
 async function init(){
