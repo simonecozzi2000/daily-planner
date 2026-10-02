@@ -426,11 +426,16 @@ function renderProjWip(){
   const list=document.getElementById('projWipList');
   if(!list)return;
 
-  // Collect all wip tasks with full path (breadcrumb) and project reference
+  // Collect only LEAF wip tasks — wip tasks that have no wip children
+  function hasWipChild(t){
+    if(!t.children||!t.children.length)return false;
+    return t.children.some(c=>(c.wip&&!c.done)||hasWipChild(c));
+  }
   const items=[];
   function walk(tasks,projId,projName,path){
     for(const t of tasks){
-      if(t.wip&&!t.done){
+      if(t.wip&&!t.done&&!hasWipChild(t)){
+        // leaf wip — show this one
         items.push({id:t.id,projId,text:t.text,deadline:t.deadline||null,path:[...path],projName});
       }
       if(t.children) walk(t.children,projId,projName,[...path,t.text]);
