@@ -426,86 +426,71 @@ function renderProjWip(){
   const list=document.getElementById('projWipList');
   if(!list)return;
 
-  // For each project, find macro tasks that have at least one wip descendant
-  // Then for each macro, find all wip sub-tasks (at any depth)
-  function getWipDescendants(task){
-    const wips=[];
-    function walk(t){
-      if(t.wip&&!t.done) wips.push(t);
-      if(t.children) t.children.forEach(walk);
-    }
-    if(task.children) task.children.forEach(walk);
-    return wips;
-  }
-
-  function hasWipDescendant(task){
-    if(task.wip&&!task.done) return true;
-    if(task.children) return task.children.some(c=>hasWipDescendant(c));
-    return false;
-  }
-
-  let totalWip=0;
-  const activeProjects=[];
-
-  for(const p of projData){
-    // macro tasks = top level tasks in project
-    const activeMacros=[];
-    for(const macro of (p.tasks||[])){
-      // get all wip tasks within this macro (including the macro itself)
-      const wipItems=[];
-      if(macro.wip&&!macro.done) wipItems.push(macro);
-      if(macro.children){
-        function collectWip(tasks){
-          for(const t of tasks){
-            if(t.wip&&!t.done) wipItems.push(t);
-            if(t.children) collectWip(t.children);
-          }
-        }
-        collectWip(macro.children);
+  // Collect all wip tasks with full path (breadcrumb) and project reference
+  const items=[];
+  function walk(tasks,projId,projName,path){
+    for(const t of tasks){
+      if(t.wip&&!t.done){
+        items.push({id:t.id,projId,text:t.text,deadline:t.deadline||null,path:[...path],projName});
       }
-      if(wipItems.length>0){
-        activeMacros.push({macro,wipItems});
-        totalWip+=wipItems.length;
-      }
+      if(t.children) walk(t.children,projId,projName,[...path,t.text]);
     }
-    if(activeMacros.length>0) activeProjects.push({proj:p,macros:activeMacros});
   }
+  for(const p of projData) walk(p.tasks||[],p.id,p.name,[]);
 
-  document.getElementById('projWipCount').textContent=`${totalWip} attività`;
+  document.getElementById('projWipCount').textContent=`${items.length} attività`;
 
-  if(!activeProjects.length){
+  if(!items.length){
     list.innerHTML='<div class="empty-s"><div class="empty-ic">🎯</div>Nessuna attività in corso</div>';
     return;
   }
 
-  list.innerHTML=activeProjects.map(({proj:p,macros})=>{
-    const macrosHtml=macros.map(({macro,wipItems})=>`
-      <div style="margin-bottom:6px;">
-        <div style="font-size:0.62rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--tx2);margin-bottom:3px;">${esc(macro.text)}</div>
-        ${wipItems.filter(t=>t.id!==macro.id).map(t=>{
-          const dl=t.deadline?`<span style="font-size:0.58rem;font-weight:600;padding:1px 5px;border-radius:99px;background:var(--oranges);color:var(--orange);">📅 ${new Date(t.deadline+'T12:00:00').toLocaleDateString('it-IT',{day:'numeric',month:'short'})}</span>`:'';
-          return`<div style="display:flex;align-items:flex-start;gap:5px;padding:2px 0 2px 8px;">
-            <span style="color:var(--orange);font-size:0.7rem;margin-top:1px;">•</span>
-            <div>
-              <span style="font-size:0.76rem;font-weight:500;color:var(--tx);">${esc(t.text)}</span>
-              ${dl?`<div style="margin-top:1px;">${dl}</div>`:''}
-            </div>
-          </div>`;
-        }).join('')}
-        ${wipItems.find(t=>t.id===macro.id)?`<div style="display:flex;align-items:center;gap:5px;padding:2px 0;">
-            <span style="color:var(--orange);font-size:0.7rem;">•</span>
-            <span style="font-size:0.76rem;font-weight:500;color:var(--tx);font-style:italic;">attività principale</span>
-          </div>`:''}
-      </div>`).join('');
-    return`<div style="background:var(--surf);border-radius:var(--r);box-shadow:var(--sh1);margin-bottom:8px;overflow:hidden;border-left:3px solid var(--purple);">
-      <div style="padding:6px 10px 4px;background:var(--purples);border-bottom:1px solid rgba(175,82,222,0.15);">
-        <span style="font-size:0.65rem;font-weight:800;text-transform:uppercase;letter-spacing:0.07em;color:var(--purple);">${esc(p.name)}</span>
-      </div>
-      <div style="padding:7px 10px;">
-        ${macrosHtml}
+  list.innerHTML=items.map(it=>{
+    // breadcrumb: path items from bottom to top, then project name highlighted
+    const crumbParts=[...it.path].reverse();
+    const crumbHtml=crumbParts.length>0
+      ? crumbParts.map(s=>`<span>${esc(s)}</span>`).join(' › ')+` › <b style="color:var(--purple)">${esc(it.projName)}</b>`
+      : `<b style="color:var(--purple)">${esc(it.projName)}</b>`;
+    const td=todayISO(),d3=offISO(3);
+    let dlHtml='';
+    if(it.deadline){
+      let cls='background:var(--blues);color:var(--blue)';
+      if(it.deadline<td)cls='background:var(--reds);color:var(--red)';
+      else if(it.deadline===td)cls='background:var(--reds);color:var(--red)';
+      else if(it.deadline<=d3)cls='background:var(--oranges);color:var(--orange)';
+      const dStr=new Date(it.deadline+'T12:00:00').toLocaleDateString('it-IT',{day:'numeric',month:'short'});
+      dlHtml=`<span style="font-size:0.58rem;font-weight:600;padding:1px 6px;border-radius:99px;${cls};">📅 ${dStr}</span>`;
+    }
+    return`<div style="background:var(--surf);border-radius:var(--rsm);box-shadow:var(--sh1);margin-bottom:6px;padding:8px 10px;border-left:3px solid var(--orange);display:flex;align-items:flex-start;gap:7px;">
+      <button onclick="completeWipTask('${it.projId}','${it.id}')" title="Segna come completata" style="width:16px;height:16px;border-radius:4px;border:1.5px solid var(--green);background:transparent;cursor:pointer;flex-shrink:0;margin-top:2px;display:flex;align-items:center;justify-content:center;font-size:0.55rem;color:transparent;transition:all 0.15s;" onmouseover="this.style.background='var(--green)';this.style.color='#fff';" onmouseout="this.style.background='transparent';this.style.color='transparent';">✓</button>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:0.8rem;font-weight:600;color:var(--tx);line-height:1.3;margin-bottom:3px;">${esc(it.text)}</div>
+        <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;">
+          ${dlHtml}
+          <span style="font-size:0.6rem;color:var(--tx3);">${crumbHtml}</span>
+        </div>
       </div>
     </div>`;
   }).join('');
+}
+
+window.completeWipTask=async function(projId,taskId){
+  // update in projData and save to Firebase projects doc
+  const p=projData.find(p=>p.id===projId);
+  if(!p)return;
+  function findAndComplete(tasks){
+    for(const t of tasks){
+      if(t.id===taskId){t.wip=false;t.done=true;return true;}
+      if(t.children&&findAndComplete(t.children))return true;
+    }
+    return false;
+  }
+  findAndComplete(p.tasks||[]);
+  try{
+    await setDoc(doc(db,'dailyplanner','simone_projects'),{projects:projData});
+    renderProjWip();
+    showToast('✅ Attività completata!');
+  }catch(e){console.error(e);}
 }
 
 async function init(){
