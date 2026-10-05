@@ -515,11 +515,31 @@ window.toggleChildInput=function(id){
 
 // ── NOTES ──
 window.openNote=async function(ref,title){
-  // toggle: if already open close it, else add
+  // toggle from 📝 button on project/task header: open if not exists, scroll to if exists
   const exists=notes.find(n=>n.ref===ref);
-  if(exists){notes=notes.filter(n=>n.ref!==ref);await save();return;}
+  if(exists){
+    // just scroll to it in the right panel
+    setTimeout(()=>{
+      const el=document.querySelector(`[data-note="${ref}"]`);
+      if(el)el.scrollIntoView({behavior:'smooth',block:'nearest'});
+    },100);
+    return;
+  }
   notes.push({id:uid(),ref,title,text:'',order:notes.length});
   await save();
+}
+
+window.openNoteFromBadge=async function(ref,title){
+  // from badge: always open, never close
+  const exists=notes.find(n=>n.ref===ref);
+  if(!exists){
+    notes.push({id:uid(),ref,title,text:'',order:notes.length});
+    await save();
+  }
+  setTimeout(()=>{
+    const el=document.querySelector(`[data-note="${ref}"]`);
+    if(el)el.scrollIntoView({behavior:'smooth',block:'nearest'});
+  },150);
 }
 
 window.closeNote=async function(ref){
@@ -603,7 +623,7 @@ function renderSubtasks(projId,tasks,depth,filterState){
     return`<div class="sub-item ${sc}">
       <div class="sub-chk" onclick="toggleSubtask('${projId}','${t.id}')">${chk}</div>
       <div class="sub-body">
-        <div class="sub-text">${esc(t.text)}${notes.find(n=>n.ref===t.id)?`<span class="note-indicator" onclick="event.stopPropagation();openNote('${t.id}','${esc(t.text).slice(0,30)}')">📝</span>`:''}</div>
+        <div class="sub-text">${esc(t.text)}${notes.find(n=>n.ref===t.id)?`<span class="note-indicator" onclick="event.stopPropagation();openNoteFromBadge('${t.id}','${esc(t.text).slice(0,30)}')">📝</span>`:''}</div>
         <div class="sub-meta">${t.wip?'<span class="wip-badge">⚙ In corso</span>':''}${dlChip(t.deadline,'sdl')}</div>
         ${children}${childInput}
       </div>
@@ -686,7 +706,7 @@ function renderProjects(){
         <span class="drag-h" onclick="event.stopPropagation()">⠿</span>
         <div class="proj-toggle" onclick="event.stopPropagation();toggleProject('${p.id}')">${p.done?'✓':''}</div>
         <div class="proj-info">
-          <div class="proj-name">${priMap[pri]} ${esc(p.name)}${notes.find(n=>n.ref===p.id)?`<span class="note-indicator" onclick="event.stopPropagation();openNote('${p.id}','${esc(p.name).slice(0,30)}')">📝</span>`:''}</div>
+          <div class="proj-name">${priMap[pri]} ${esc(p.name)}${notes.find(n=>n.ref===p.id)?`<span class="note-indicator" onclick="event.stopPropagation();openNoteFromBadge('${p.id}','${esc(p.name).slice(0,30)}')">📝</span>`:''}</div>
           <div class="proj-meta">${statusBadge(st)}${dlChip(p.deadline,'dl')}${progressHtml}</div>
         </div>
         <div class="proj-actions" onclick="event.stopPropagation()">
