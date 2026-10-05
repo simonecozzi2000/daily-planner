@@ -42,11 +42,16 @@
   .left-panel::-webkit-scrollbar-thumb{background:var(--brd);border-radius:2px;}
 
   /* RIGHT — notes */
-  .right-panel{width:300px;flex-shrink:0;background:var(--surf);border-left:1px solid var(--brdl);overflow-y:auto;padding:14px;}
+  .right-panel{width:320px;flex-shrink:0;background:var(--surf);border-left:1px solid var(--brdl);overflow-y:auto;padding:14px;position:relative;}
   .right-panel::-webkit-scrollbar{width:4px;}
   .right-panel::-webkit-scrollbar-thumb{background:var(--brd);border-radius:2px;}
   .notes-title{font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--tx3);margin-bottom:12px;}
   .notes-empty{text-align:center;padding:40px 10px;color:var(--tx3);font-size:0.78rem;}
+  .resize-handle{position:absolute;left:0;top:0;bottom:0;width:5px;cursor:col-resize;background:transparent;z-index:10;transition:background 0.15s;}
+  .resize-handle:hover{background:rgba(0,122,255,0.2);}
+  /* note indicator badge */
+  .note-indicator{display:inline-flex;align-items:center;gap:2px;font-size:0.58rem;font-weight:700;color:#92400e;background:#fef9c3;border:1px solid #fde68a;padding:1px 5px;border-radius:99px;cursor:pointer;margin-left:4px;vertical-align:middle;}
+  .note-indicator:hover{background:#fde68a;}
 
   /* POST-IT */
   .postit{background:#fefce8;border:1px solid #fde68a;border-radius:var(--rsm);margin-bottom:10px;box-shadow:var(--sh1);cursor:grab;transition:box-shadow 0.15s;}
@@ -258,7 +263,8 @@
     <div class="projects-list" id="projectsList"></div>
   </div>
 
-  <div class="right-panel">
+  <div class="right-panel" id="rightPanel">
+    <div class="resize-handle" id="resizeHandle"></div>
     <div class="notes-title">📝 Note</div>
     <div id="notesList"><div class="notes-empty">Clicca 📝 su un progetto o attività per aprire un post-it</div></div>
   </div>
@@ -597,7 +603,7 @@ function renderSubtasks(projId,tasks,depth,filterState){
     return`<div class="sub-item ${sc}">
       <div class="sub-chk" onclick="toggleSubtask('${projId}','${t.id}')">${chk}</div>
       <div class="sub-body">
-        <div class="sub-text">${esc(t.text)}</div>
+        <div class="sub-text">${esc(t.text)}${notes.find(n=>n.ref===t.id)?`<span class="note-indicator" onclick="event.stopPropagation();openNote('${t.id}','${esc(t.text).slice(0,30)}')">📝</span>`:''}</div>
         <div class="sub-meta">${t.wip?'<span class="wip-badge">⚙ In corso</span>':''}${dlChip(t.deadline,'sdl')}</div>
         ${children}${childInput}
       </div>
@@ -680,7 +686,7 @@ function renderProjects(){
         <span class="drag-h" onclick="event.stopPropagation()">⠿</span>
         <div class="proj-toggle" onclick="event.stopPropagation();toggleProject('${p.id}')">${p.done?'✓':''}</div>
         <div class="proj-info">
-          <div class="proj-name">${priMap[pri]} ${esc(p.name)}</div>
+          <div class="proj-name">${priMap[pri]} ${esc(p.name)}${notes.find(n=>n.ref===p.id)?`<span class="note-indicator" onclick="event.stopPropagation();openNote('${p.id}','${esc(p.name).slice(0,30)}')">📝</span>`:''}</div>
           <div class="proj-meta">${statusBadge(st)}${dlChip(p.deadline,'dl')}${progressHtml}</div>
         </div>
         <div class="proj-actions" onclick="event.stopPropagation()">
@@ -712,6 +718,32 @@ function renderNotes(){
 function render(){renderProjects();renderNotes();}
 
 init();
+
+// ── RESIZE PANEL ──
+(function(){
+  const handle=document.getElementById('resizeHandle');
+  const panel=document.getElementById('rightPanel');
+  let startX,startW;
+  handle.addEventListener('mousedown',e=>{
+    startX=e.clientX;
+    startW=panel.offsetWidth;
+    document.body.style.userSelect='none';
+    document.body.style.cursor='col-resize';
+    function onMove(e){
+      const delta=startX-e.clientX;
+      const newW=Math.max(200,Math.min(600,startW+delta));
+      panel.style.width=newW+'px';
+    }
+    function onUp(){
+      document.removeEventListener('mousemove',onMove);
+      document.removeEventListener('mouseup',onUp);
+      document.body.style.userSelect='';
+      document.body.style.cursor='';
+    }
+    document.addEventListener('mousemove',onMove);
+    document.addEventListener('mouseup',onUp);
+  });
+})();
 </script>
 </body>
 </html>
