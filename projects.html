@@ -335,6 +335,18 @@ async function init(){
   });
 }
 async function save(){await setDoc(doc(db,"dailyplanner",DOC),{projects,notes});}
+async function saveProjects(){
+  // save only projects field, never touch notes
+  const {updateDoc} = await import("https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js");
+  try{await updateDoc(doc(db,"dailyplanner",DOC),{projects});}
+  catch(e){// doc might not exist yet
+    await setDoc(doc(db,"dailyplanner",DOC),{projects,notes});}
+}
+async function saveNotes(){
+  const {updateDoc} = await import("https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js");
+  try{await updateDoc(doc(db,"dailyplanner",DOC),{notes});}
+  catch(e){await setDoc(doc(db,"dailyplanner",DOC),{projects,notes});}
+}
 
 // ── UTILS ──
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2);}
@@ -417,20 +429,21 @@ window.addProject=async function(){
   const dl=document.getElementById('projDeadline').value;
   const pri=document.getElementById('projPriority').value;
   projects.unshift({id:uid(),name,deadline:dl||null,priority:pri,done:false,expanded:true,tasks:[]});
-  await save();
+  await saveProjects();
   document.getElementById('projName').value='';
   document.getElementById('projDeadline').value='';
   showToast('✓ Progetto aggiunto');
 }
 
-window.toggleProject=async function(id){const p=projects.find(p=>p.id===id);if(p){p.done=!p.done;await save();}}
-window.toggleExpand=async function(id){const p=projects.find(p=>p.id===id);if(p){p.expanded=!p.expanded;await save();}}
+window.toggleProject=async function(id){const p=projects.find(p=>p.id===id);if(p){p.done=!p.done;await saveProjects();}}
+window.toggleExpand=async function(id){const p=projects.find(p=>p.id===id);if(p){p.expanded=!p.expanded;await saveProjects();}}
 window.deleteProject=async function(id){
   if(!confirm('Eliminare questo progetto?'))return;
   projects=projects.filter(p=>p.id!==id);
-  // remove related notes
   notes=notes.filter(n=>!n.ref.startsWith(id));
-  await save();showToast('Progetto eliminato');
+  await saveProjects();
+  await saveNotes();
+  showToast('Progetto eliminato');
 }
 
 // ── SUBTASKS ──
@@ -451,7 +464,7 @@ window.addSubtask=async function(projId,parentId){
   if(parentId){const par=findTask(p.tasks,parentId);if(par){if(!par.children)par.children=[];par.children.push(nt);}}
   else p.tasks.push(nt);
   inp.value='';if(dinp)dinp.value='';
-  await save();
+  await saveProjects();
 }
 
 // find direct parent of a task (returns task object or null if top-level)
@@ -499,14 +512,16 @@ window.toggleSubtask=async function(projId,taskId){
     }
   }
 
-  await save();
+  await saveProjects();
 }
 
 window.deleteSubtask=async function(projId,taskId){
   const p=projects.find(p=>p.id===projId);if(!p)return;
   removeTask(p.tasks,taskId);
   notes=notes.filter(n=>!n.ref.includes(taskId));
-  await save();showToast('Attività eliminata');
+  await saveProjects();
+  await saveNotes();
+  showToast('Attività eliminata');
 }
 
 window.toggleChildInput=function(id){
@@ -515,10 +530,8 @@ window.toggleChildInput=function(id){
 
 // ── NOTES ──
 window.openNote=async function(ref,title){
-  // toggle from 📝 button on project/task header: open if not exists, scroll to if exists
   const exists=notes.find(n=>n.ref===ref);
   if(exists){
-    // just scroll to it in the right panel
     setTimeout(()=>{
       const el=document.querySelector(`[data-note="${ref}"]`);
       if(el)el.scrollIntoView({behavior:'smooth',block:'nearest'});
@@ -526,15 +539,14 @@ window.openNote=async function(ref,title){
     return;
   }
   notes.push({id:uid(),ref,title,text:'',order:notes.length});
-  await save();
+  await saveNotes();
 }
 
 window.openNoteFromBadge=async function(ref,title){
-  // from badge: always open, never close
   const exists=notes.find(n=>n.ref===ref);
   if(!exists){
     notes.push({id:uid(),ref,title,text:'',order:notes.length});
-    await save();
+    await saveNotes();
   }
   setTimeout(()=>{
     const el=document.querySelector(`[data-note="${ref}"]`);
@@ -543,11 +555,13 @@ window.openNoteFromBadge=async function(ref,title){
 }
 
 window.closeNote=async function(ref){
-  notes=notes.filter(n=>n.ref!==ref);await save();
+  notes=notes.filter(n=>n.ref!==ref);
+  await saveNotes();
 }
 
 window.updateNote=async function(ref,val){
-  const n=notes.find(n=>n.ref===ref);if(n){n.text=val;await save();}
+  const n=notes.find(n=>n.ref===ref);
+  if(n){n.text=val;await saveNotes();}
 }
 
 // note drag
@@ -559,7 +573,7 @@ window.noteDrop=async function(e,ref){
   if(dragSrcNote===ref)return;
   const si=notes.findIndex(n=>n.ref===dragSrcNote);const di=notes.findIndex(n=>n.ref===ref);
   if(si<0||di<0)return;const[m]=notes.splice(si,1);notes.splice(di,0,m);
-  await save();dragSrcNote=null;
+  await saveNotes();dragSrcNote=null;
 }
 
 // ── MODAL ──
@@ -590,7 +604,7 @@ window.saveModal=async function(){
   const name=document.getElementById('modalName').value.trim();if(!name)return;
   if(modalMode==='project'){const p=projects.find(p=>p.id===modalId);if(p){p.name=name;p.deadline=document.getElementById('modalDeadline').value||null;p.priority=document.getElementById('modalPriority').value;}}
   else if(modalMode==='subtask'){const p=projects.find(p=>p.id===modalProjId);if(p){const t=findTask(p.tasks,modalId);if(t){t.text=name;t.deadline=document.getElementById('modalDeadline').value||null;}}}
-  await save();closeModal();showToast('✓ Salvato');
+  await saveProjects();closeModal();showToast('✓ Salvato');
 }
 
 // ── PROJ DRAG ──
@@ -602,7 +616,7 @@ window.dragDrop=async function(e,id){
   if(dragSrcProj===id)return;
   const si=projects.findIndex(p=>p.id===dragSrcProj);const di=projects.findIndex(p=>p.id===id);
   if(si<0||di<0)return;const[m]=projects.splice(si,1);projects.splice(di,0,m);
-  await save();dragSrcProj=null;
+  await saveProjects();dragSrcProj=null;
 }
 
 // ── RENDER ──
