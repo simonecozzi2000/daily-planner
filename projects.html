@@ -323,8 +323,17 @@ let modalMode=null, modalId=null, modalProjId=null;
 // ── INIT ──
 async function init(){
   onSnapshot(doc(db,"dailyplanner",DOC), snap=>{
-    if(snap.exists()){const d=snap.data();projects=d.projects||[];notes=d.notes||[];}
-    else{projects=[];notes=[];}
+    if(snap.exists()){
+      const d=snap.data();
+      projects=d.projects||[];
+      // Never overwrite notes in memory with empty array from Firebase
+      // unless we have no notes in memory (first load)
+      const fbNotes=d.notes||[];
+      if(fbNotes.length>0||notes.length===0) notes=fbNotes;
+    } else {
+      projects=[];
+      if(notes.length===0) notes=[];
+    }
     document.getElementById('loadScreen').style.display='none';
     document.getElementById('appBody').style.display='flex';
     render();
@@ -334,19 +343,16 @@ async function init(){
     document.getElementById('appBody').style.display='flex';
   });
 }
-async function save(){await setDoc(doc(db,"dailyplanner",DOC),{projects,notes});}
-async function saveProjects(){
-  // save only projects field, never touch notes
-  const {updateDoc} = await import("https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js");
-  try{await updateDoc(doc(db,"dailyplanner",DOC),{projects});}
-  catch(e){// doc might not exist yet
-    await setDoc(doc(db,"dailyplanner",DOC),{projects,notes});}
+// Always save BOTH fields together to avoid partial overwrites
+async function save(){
+  await setDoc(doc(db,"dailyplanner",DOC),{
+    projects: projects||[],
+    notes: notes||[]
+  });
 }
-async function saveNotes(){
-  const {updateDoc} = await import("https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js");
-  try{await updateDoc(doc(db,"dailyplanner",DOC),{notes});}
-  catch(e){await setDoc(doc(db,"dailyplanner",DOC),{projects,notes});}
-}
+// Aliases — always save everything
+const saveProjects = save;
+const saveNotes = save;
 
 // ── UTILS ──
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2);}
