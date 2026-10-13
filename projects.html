@@ -301,7 +301,7 @@
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js";
-import { getFirestore, doc, onSnapshot, setDoc } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js";
+import { getFirestore, doc, onSnapshot, setDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js";
 
 const fb = initializeApp({
   apiKey:"AIzaSyBUS8U-g_a7SfDLpi_4QyPCtrJccMWlXmE",
@@ -322,17 +322,14 @@ let modalMode=null, modalId=null, modalProjId=null;
 
 // ── INIT ──
 async function init(){
+  await ensureDoc();
   onSnapshot(doc(db,"dailyplanner",DOC), snap=>{
     if(snap.exists()){
       const d=snap.data();
       projects=d.projects||[];
-      // Never overwrite notes in memory with empty array from Firebase
-      // unless we have no notes in memory (first load)
-      const fbNotes=d.notes||[];
-      if(fbNotes.length>0||notes.length===0) notes=fbNotes;
+      notes=d.notes||[];
     } else {
-      projects=[];
-      if(notes.length===0) notes=[];
+      projects=[];notes=[];
     }
     document.getElementById('loadScreen').style.display='none';
     document.getElementById('appBody').style.display='flex';
@@ -343,16 +340,23 @@ async function init(){
     document.getElementById('appBody').style.display='flex';
   });
 }
-// Always save BOTH fields together to avoid partial overwrites
-async function save(){
-  await setDoc(doc(db,"dailyplanner",DOC),{
-    projects: projects||[],
-    notes: notes||[]
-  });
+// First-time init: create doc if not exists
+async function ensureDoc(){
+  try{await updateDoc(doc(db,"dailyplanner",DOC),{});}
+  catch(e){await setDoc(doc(db,"dailyplanner",DOC),{projects:[],notes:[]});}
 }
-// Aliases — always save everything
-const saveProjects = save;
-const saveNotes = save;
+// Save ONLY projects — never touches notes field
+async function saveProjects(){
+  try{await updateDoc(doc(db,"dailyplanner",DOC),{projects:projects||[]});}
+  catch(e){await setDoc(doc(db,"dailyplanner",DOC),{projects:projects||[],notes:notes||[]});}
+}
+// Save ONLY notes — never touches projects field
+async function saveNotes(){
+  try{await updateDoc(doc(db,"dailyplanner",DOC),{notes:notes||[]});}
+  catch(e){await setDoc(doc(db,"dailyplanner",DOC),{projects:projects||[],notes:notes||[]});}
+}
+// Legacy alias — safe full save
+async function save(){await saveProjects();}
 
 // ── UTILS ──
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2);}
