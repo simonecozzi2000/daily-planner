@@ -322,7 +322,12 @@ let modalMode=null, modalId=null, modalProjId=null;
 
 // ── INIT ──
 async function init(){
-  await ensureDoc();
+  // Ensure doc exists before updateDoc can work
+  const {getDoc} = await import("https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js");
+  const snap0 = await getDoc(doc(db,"dailyplanner",DOC));
+  if(!snap0.exists()){
+    await setDoc(doc(db,"dailyplanner",DOC),{projects:[],notes:[]});
+  }
   onSnapshot(doc(db,"dailyplanner",DOC), snap=>{
     if(snap.exists()){
       const d=snap.data();
@@ -340,22 +345,15 @@ async function init(){
     document.getElementById('appBody').style.display='flex';
   });
 }
-// First-time init: create doc if not exists
-async function ensureDoc(){
-  try{await updateDoc(doc(db,"dailyplanner",DOC),{});}
-  catch(e){await setDoc(doc(db,"dailyplanner",DOC),{projects:[],notes:[]});}
-}
-// Save ONLY projects — never touches notes field
+// Save ONLY projects using updateDoc — Firebase only updates the 'projects' field
+// The 'notes' field in Firebase is NEVER touched by this function
 async function saveProjects(){
-  try{await updateDoc(doc(db,"dailyplanner",DOC),{projects:projects||[]});}
-  catch(e){await setDoc(doc(db,"dailyplanner",DOC),{projects:projects||[],notes:notes||[]});}
+  await updateDoc(doc(db,"dailyplanner",DOC),{projects:projects||[]});
 }
-// Save ONLY notes — never touches projects field
+// Save ONLY notes using updateDoc — Firebase only updates the 'notes' field
 async function saveNotes(){
-  try{await updateDoc(doc(db,"dailyplanner",DOC),{notes:notes||[]});}
-  catch(e){await setDoc(doc(db,"dailyplanner",DOC),{projects:projects||[],notes:notes||[]});}
+  await updateDoc(doc(db,"dailyplanner",DOC),{notes:notes||[]});
 }
-// Legacy alias — safe full save
 async function save(){await saveProjects();}
 
 // ── UTILS ──
